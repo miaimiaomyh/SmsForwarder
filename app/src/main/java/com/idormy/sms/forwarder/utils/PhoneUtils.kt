@@ -186,64 +186,43 @@ class PhoneUtils private constructor() {
         @SuppressLint("SoonBlockedPrivateApi", "DiscouragedPrivateApi")
         @RequiresPermission(permission.SEND_SMS)
         fun sendSms(subId: Int, mobileList: String, message: String): String? {
-            if (TextUtils.isEmpty(mobileList) || TextUtils.isEmpty(message)) {
-                Log.e(TAG, "mobileList or message is empty!")
-                return "mobileList or message is empty!"
-            }
-
             val mobiles = mobileList.replace("；", ";").replace("，", ";").replace(",", ";")
             Log.d(TAG, "subId = $subId, mobiles = $mobiles, message = $message")
             val mobileArray = mobiles.split(";".toRegex()).toTypedArray()
+            
             for (mobile in mobileArray) {
-                Log.d(TAG, "mobile = $mobile")
-                if (!isValidPhoneNumber(mobile)) {
-                    Log.e(TAG, "mobile ($mobile) is invalid!")
-                    continue
-                }
-
                 try {
-                    val sendFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_ONE_SHOT
-                    val sendPI = PendingIntent.getBroadcast(XUtil.getContext(), 0, Intent(), sendFlags)
+                    // 获取SmsManager实例
+                    val smsManager = if (subId > -1 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                        SmsManager.getSmsManagerForSubscriptionId(subId)
+                    } else {
+                        SmsManager.getDefault()
+                    }
 
-                    val smsManager = if (subId > -1 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) SmsManager.getSmsManagerForSubscriptionId(
-                        subId
-                    ) else SmsManager.getDefault()
                     // Android 5.1.1 以下使用反射指定卡槽
                     if (subId > -1 && Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) {
                         Log.d(TAG, "Android 5.1.1 以下使用反射指定卡槽")
                         val clz = SmsManager::class.java
-                        val field = clz.getDeclaredField("mSubId") // 反射拿到变量
-                        field.isAccessible = true // 修改权限为可读写
+                        val field = clz.getDeclaredField("mSubId")
+                        field.isAccessible = true
                         field.set(smsManager, subId)
                     }
 
                     // 切割长短信
                     if (message.length >= 70) {
-                        val deliverFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) PendingIntent.FLAG_IMMUTABLE else 0
-                        val deliverPI = PendingIntent.getBroadcast(
-                            XUtil.getContext(), 0, Intent("DELIVERED_SMS_ACTION"), deliverFlags
-                        )
-
-                        val sentPendingIntents = ArrayList<PendingIntent>()
-                        val deliveredPendingIntents = ArrayList<PendingIntent>()
                         val divideContents = smsManager.divideMessage(message)
-
-                        for (i in divideContents.indices) {
-                            sentPendingIntents.add(i, sendPI)
-                            deliveredPendingIntents.add(i, deliverPI)
-                        }
-                        smsManager.sendMultipartTextMessage(
-                            mobile, null, divideContents, sentPendingIntents, deliveredPendingIntents
-                        )
+                        // 不传递PendingIntent参数
+                        smsManager.sendMultipartTextMessage(mobile, null, divideContents, null, null)
                     } else {
-                        smsManager.sendTextMessage(mobile, null, message, sendPI, null)
+                        // 不传递PendingIntent参数
+                        smsManager.sendTextMessage(mobile, null, message, null, null)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, e.message.toString())
                     return e.message.toString()
                 }
             }
-
+            
             return null
         }
 
